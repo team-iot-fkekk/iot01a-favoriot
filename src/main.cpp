@@ -41,9 +41,39 @@
 // Includes.
 #include <Arduino.h>
 #include <HTS221Sensor.h>
+#include <SPI.h>
+#include <WiFiST.h>
+
+/*
+  The following configuration is dedicated to the DISCO L475VG IoT board.
+  You should adapt it to your board.
+
+Configure SPI3:
+ * MOSI: PC12
+ * MISO: PC11
+ * SCLK: PC10
+
+Configure WiFi:
+ * SPI         : SPI3
+ * Cs          : PE0
+ * Data_Ready  : PE1
+ * reset       : PE8
+ * wakeup      : PB13
+ */
+
+SPIClass SPI_3(PC12, PC11, PC10);
+WiFiClass WiFi(&SPI_3, PE0, PE1, PE8, PB13);
 
 #define I2C2_SCL PB10
 #define I2C2_SDA PB11
+
+char ssid[] = "wifiSSID";                        // change it!
+char pass[] = "wifiPassword";                    // change it!
+const String yourDevice = "Device_Developer_ID"; // change it!
+int status = WL_IDLE_STATUS;
+String apikey = "your_apikey"; // **replace with your api key from the FAVORIOT platform account setting
+char server[] = "apiv2.favoriot.com";
+WiFiClient client;
 
 // Components.
 HTS221Sensor *HumTemp;
@@ -63,6 +93,18 @@ void setup()
   // Initlialize components.
   HumTemp = new HTS221Sensor(dev_i2c);
   HumTemp->Enable();
+
+  // attempt to connect to Wifi network:
+  while (status != WL_CONNECTED)
+  {
+    Serial.print("Attempting to connect to WiFi network ");
+    Serial.println(ssid);
+    // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
+    status = WiFi.begin(ssid, pass);
+    // wait 10 seconds for connection:
+    delay(10000);
+  }
+  Serial.println("Connected.\n");
 }
 
 void loop()
@@ -83,4 +125,28 @@ void loop()
   Serial.print(humidity, 2);
   Serial.print(" | Temp[C]: ");
   Serial.println(temperature, 2);
+
+  String json = "{\"device_developer_id\":\"" + yourDevice + "\",\"data\":{\"Temperature\":\"" + temperature + "\",\"Humidity\":\"" + humidity + "\"}}";
+  //String json = "{\"device_developer_id\":\""+yourDevice+"\",\"data\":{\"Potentio\":\""+pot+"\",\"Temperature\":\""+temp+"\",\"Humidity\":\""+humid+"\"}}";
+  Serial.println(json);
+  if (client.connect(server, 80))
+  {
+    // Make a HTTP request:
+    Serial.println("        STATUS : Sending data..."); //Display sending status
+    client.println("POST /v2/streams HTTP/1.1");
+    client.println("Host: apiv2.favoriot.com");
+    client.print(String("apikey: "));
+    client.println(apikey);
+    client.println("Content-Type: application/json");
+    client.println("cache-control: no-cache");
+    client.print("Content-Length: ");
+    int thisLength = json.length();
+    client.println(thisLength);
+    client.println("Connection: close");
+
+    client.println();
+    client.println(json);
+    Serial.println("        STATUS : Data sent!"); //display sent status
+  }
+  delay(5000);
 }
